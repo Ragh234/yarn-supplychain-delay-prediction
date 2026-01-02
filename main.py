@@ -57,13 +57,11 @@ X = df[features].fillna(-1)
 y_clf = df["delay_flag"]
 y_reg = df["delay_days"]
 
-# 6️ Train/test split (chronological)
 split_idx = int(len(df)*0.8)
 X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
 y_train_clf, y_test_clf = y_clf.iloc[:split_idx], y_clf.iloc[split_idx:]
 y_train_reg, y_test_reg = y_reg.iloc[:split_idx], y_reg.iloc[split_idx:]
 
-# 7️ Train models
 clf = RandomForestClassifier(n_estimators=120, random_state=42)
 clf.fit(X_train, y_train_clf)
 probs = clf.predict_proba(X_test)[:,1]
@@ -74,12 +72,10 @@ reg.fit(X_train, y_train_reg)
 pred = reg.predict(X_test)
 mae = mean_absolute_error(y_test_reg, pred)
 
-print("\n================ MODEL PERFORMANCE ================")
+print("\nMODEL PERFORMANCE")
 print(f" Delay Classifier ROC-AUC: {auc:.3f}")
 print(f" Delay Regressor MAE: {mae:.2f} days")
-print("===================================================")
 
-# 8️ ROC Curve
 fpr, tpr, _ = roc_curve(y_test_clf, probs)
 plt.figure(figsize=(6,5))
 plt.plot(fpr, tpr, label=f"AUC={auc:.3f}", color='blue')
@@ -90,7 +86,6 @@ plt.ylabel("True Positive Rate")
 plt.legend()
 plt.show()
 
-# 9️ Delay Distribution
 plt.figure(figsize=(7,4))
 sns.histplot(df["delay_days"], kde=True, bins=20, color='steelblue')
 plt.title("Distribution of Shipment Delay (Days)")
@@ -98,7 +93,6 @@ plt.xlabel("Delay Days")
 plt.ylabel("Frequency")
 plt.show()
 
-#  Carrier performance
 carrier_perf = df.groupby("carrier")["delay_days"].mean().sort_values(ascending=False)
 plt.figure(figsize=(8,4))
 sns.barplot(x=carrier_perf.index, y=carrier_perf.values, palette="mako")
@@ -107,7 +101,6 @@ plt.ylabel("Avg Delay (Days)")
 plt.xticks(rotation=30)
 plt.show()
 
-# 11 Delay vs Shipping Cost
 plt.figure(figsize=(7,5))
 sns.scatterplot(x=df["shipping_cost"], y=df["delay_days"], hue=df["shipment_type"], alpha=0.7)
 plt.title("Shipping Cost vs Delay Days")
@@ -116,7 +109,6 @@ plt.ylabel("Delay Days")
 plt.legend(title="Shipment Type")
 plt.show()
 
-# 12 Predict future shipments & evaluate expedite decisions
 upcoming = df.tail(300).copy()
 X_up = upcoming[features].fillna(-1)
 upcoming["pred_delay_prob"] = clf.predict_proba(X_up)[:,1]
@@ -128,7 +120,6 @@ upcoming["expedite_cost"] = upcoming["shipping_cost"] + upcoming["expedite_surch
 upcoming["baseline_expected_cost"] = upcoming["shipping_cost"] + upcoming["expected_stockout_cost"]
 upcoming["expedite_decision"] = (upcoming["expedite_cost"] < upcoming["baseline_expected_cost"]).astype(int)
 
-# 13 Cost comparison
 total_baseline = upcoming["baseline_expected_cost"].sum()
 total_after = (
     upcoming["expedite_decision"] * upcoming["expedite_cost"]
@@ -136,14 +127,12 @@ total_after = (
 ).sum()
 savings = total_baseline - total_after
 
-print("\n================ COST OPTIMIZATION ================")
+print("\nCOST OPTIMIZATION")
 print(f" Baseline Expected Cost: ₹{total_baseline:,.2f}")
 print(f" Optimized Cost (After Decision): ₹{total_after:,.2f}")
 print(f" Expected Savings: ₹{savings:,.2f}")
 print(f" Expedite Shipments: {upcoming['expedite_decision'].sum()} out of {len(upcoming)}")
-print("===================================================")
 
-# 14 Cost Visualization
 cost_df = pd.DataFrame({
     "Scenario": ["Baseline Cost", "Optimized Cost"],
     "Total_Cost": [total_baseline, total_after]
@@ -154,7 +143,6 @@ plt.title("Cost Comparison: Baseline vs Optimized")
 plt.ylabel("Total Cost (₹)")
 plt.show()
 
-# 15 Expedite decision impact
 plt.figure(figsize=(6,4))
 sns.countplot(x="expedite_decision", data=upcoming, palette="Set2")
 plt.title("Expedite Decisions (0=No, 1=Yes)")
@@ -162,10 +150,10 @@ plt.xlabel("Decision")
 plt.ylabel("Count of Shipments")
 plt.show()
 
-# 16 Delay probability distribution
 plt.figure(figsize=(7,4))
 sns.histplot(upcoming["pred_delay_prob"], bins=20, kde=True, color="orange")
 plt.title("Predicted Delay Probability Distribution")
 plt.xlabel("Predicted Probability of Delay")
 plt.show()
+
 
