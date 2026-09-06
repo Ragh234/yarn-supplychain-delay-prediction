@@ -1,107 +1,141 @@
-🧶 Yarn Supply Chain Delay Prediction & Cost Optimization
-📘 Overview
+# Yarn Supply Chain Delay Prediction & Cost Optimization
 
-This project focuses on predicting shipment delays and minimizing overall logistics costs in the Yarn Manufacturing and Distribution Supply Chain.
-The yarn company, based in Surat, processes raw yarn sourced from Indian states like Gujarat, Chennai, Punjab, Rajasthan, and UP, and distributes finished yarn to Mumbai, Madhya Pradesh, Assam, Gujarat, Kerala, West Bengal, Karnataka, Jaipur, and Uttarakhand.
+[![CI](https://github.com/Ragh234/yarn-supplychain-delay-prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/Ragh234/yarn-supplychain-delay-prediction/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-🎯 Objectives
+Predicts shipment delays for a yarn manufacturer's inbound/outbound
+logistics (modeled on a Surat-based operation sourcing from Gujarat,
+Chennai, Punjab, Rajasthan, and UP, and distributing to Mumbai, MP, Assam,
+Kerala, West Bengal, Karnataka, and Uttarakhand), then uses those
+predictions to recommend which shipments are worth expediting.
 
-Predict the probability and duration of shipment delays using historical data.
+**The dataset (`yarn_supplychain_surat.csv`, ~1,000 rows) is synthetic** —
+generated to be structurally realistic, not scraped or sourced from a real
+carrier. Treat all figures below as a demonstration of the modeling and
+cost-optimization approach, not a claim about real-world logistics
+accuracy.
 
-Estimate cost impacts due to delays, stockouts, and expedited shipping.
+## Run it
 
-Recommend optimal expedite decisions to minimize total logistics cost.
+```bash
+pip install -r requirements.txt
+python main.py yarn_supplychain_surat.csv
+```
 
-Visualize insights via graphs and Power BI dashboards.
+This trains both models, prints performance metrics and cost-optimization
+results, and opens 7 matplotlib/seaborn charts (ROC curve, delay
+distribution, cost comparison, etc. — static copies of each are checked
+into the repo root as `Screenshot 2025-10-23 *.png`; see Charts below).
 
-🧩 Project Workflow
+## What it does
 
-Data Preparation
+1. **Feature engineering** — lead time, planned transit days, weekday/month of departure, and a rolling per-carrier delay rate (see "Bug found and fixed" below).
+2. **Two models**, both `RandomForest` (`sklearn.ensemble`), trained on an 80/20 chronological split:
+   - `RandomForestClassifier` → probability a shipment is delayed (ROC-AUC).
+   - `RandomForestRegressor` → expected delay in days (MAE).
+3. **Cost optimization** on the most recent 300 shipments: compares the cost of expediting a shipment against its expected stockout cost (`delay probability × quantity × stockout cost per tonne`), and recommends expediting whichever is cheaper.
 
-Synthetic dataset (yarn_supplychain_surat.csv) with ~1000 records.
+## Model performance (honestly reported)
 
-Includes features such as:
+| Metric | Before fix (leaky) | After fix |
+|---|---|---|
+| Delay Classifier ROC-AUC | 0.555 | **0.509** |
+| Delay Regressor MAE | 2.25 days | **2.28 days** |
 
-booking_date, scheduled_departure, actual_arrival
+Measured directly from `python main.py yarn_supplychain_surat.csv`
+(`RandomForest(random_state=42)`, so these are reproducible, not cherry-picked).
 
-carrier, shipment_type, weight, quantity_tonnes
+**This is a meaningfully worse headline number than earlier versions of
+this README claimed (~0.82 AUC / ~1.4 days MAE), and that's the point —
+see below.**
 
-shipping_cost, expedite_surcharge, stockout_cost_per_tonne
+### Bug found and fixed: target leakage in `carrier_delay_30`
 
-delay_flag, delay_days
+The rolling per-carrier delay-rate feature was computed as:
 
-Data simulated to represent Surat-based factory operations.
+```python
+df["carrier_delay_30"] = (
+    df.groupby("carrier")["delay_flag"]
+      .transform(lambda x: x.rolling(window=60, min_periods=1).mean())
+)
+```
 
-Feature Engineering
+`rolling()` includes the *current* row by default. That means each row's
+feature partially encoded that same row's own label — the model was
+reading a smeared copy of the answer. It's also named `_30` while using
+`window=60`, a second, unrelated inconsistency.
 
-Calculated lead time, planned transit days, month, and weekday.
+Fixed to:
 
-Added rolling carrier delay rate (30-day window).
+```python
+df["carrier_delay_30"] = (
+    df.groupby("carrier")["delay_flag"]
+      .transform(lambda x: x.shift(1).rolling(window=30, min_periods=1).mean())
+)
+```
 
-Encoded categorical fields like temperature sensitivity.
+`shift(1)` excludes the current row, so the feature only reflects delay
+history known *before* this shipment's outcome, and the window now
+matches its name (30 of that carrier's most recent shipment records —
+note this is a row count, not a calendar-day window; there's no date
+resampling here).
 
-Modeling
+**Once the leak was removed, ROC-AUC dropped from 0.555 to 0.509** — barely
+above random (0.5). That's the honest result: on this synthetic dataset,
+these features carry very little genuine predictive signal for
+`delay_flag` once the model can no longer partially see its own label.
+The pre-fix 0.555 itself already didn't match the ~0.82 previously claimed
+here, which was likely never reproduced against this exact script/dataset
+combination — I'm reporting what I actually measured, not preserving an
+old headline number.
 
-RandomForestClassifier → predicts probability of shipment delay.
+## Cost optimization (measured, both before and after the fix)
 
-RandomForestRegressor → predicts expected delay days.
+| | Before fix | After fix |
+|---|---|---|
+| Baseline expected cost | ₹3,756,144.17 | ₹3,867,961.82 |
+| Optimized cost | ₹2,404,654.98 | ₹2,411,863.27 |
+| Expected savings | ₹1,351,489.20 | ₹1,456,098.55 |
+| Shipments expedited | 224 / 300 | 227 / 300 |
 
-Model evaluation metrics:
+This part of the pipeline is far less sensitive to the leakage fix than
+the classifier's ROC-AUC — the recommendation logic compares costs using
+the regressor's continuous delay-day output and each shipment's actual
+economics, not a hard classification threshold.
 
-ROC-AUC for classification
+![Cost comparison chart](<Screenshot 2025-10-23 010428.png>)
 
-MAE (Mean Absolute Error) for regression
+## Charts
 
-Optimization
+The script produces 7 charts total, checked into the repo root
+(`Screenshot 2025-10-23 *.png`) since that's where they were originally
+committed. Two worth calling out:
 
-Calculated baseline vs optimized costs using predicted delays:
+![Delay distribution](<Screenshot 2025-10-23 010354.png>)
 
-Expected Stockout Cost = Delay Probability × Quantity × Stockout Cost
-Expedite Cost = Shipping Cost + Expedite Surcharge
-Decision: Expedite if Expedite Cost < Expected Stockout Cost
+*Most shipments arrive on time or early; the right tail (up to ~14 days)
+is what the model is trying to predict.*
 
+![Average delay by carrier](<Screenshot 2025-10-23 010406.png>)
 
-Computed total baseline cost, optimized cost, and savings.
+The remaining three (`010415`: shipping cost vs. delay days, `010437`:
+expedite decision counts, `010443`: predicted delay probability
+distribution) are the same chart types the script generates each run.
 
-📊 Visualizations (Matplotlib + Seaborn)
+> **About `Screenshot 2025-10-23 010303.png` (ROC curve):** this
+> screenshot is from an earlier snapshot of the pipeline (before the
+> leakage fix above, and before a later "refactor for clarity" commit)
+> and shows AUC=0.635 — a third number, different from both figures in
+> the table above. It's included to show what the script outputs, not as
+> a current performance claim. Trust the **Model performance** table
+> above over any number baked into an image.
 
-The notebook produces multiple insightful graphs:
+## Tech stack
 
-Visualization	Purpose
-ROC Curve	Classifier performance (AUC score)
-Delay Distribution	Frequency of shipment delays
-Average Delay by Carrier	Carrier efficiency comparison
-Shipping Cost vs Delay Days	Correlation insight
-Cost Comparison (Baseline vs Optimized)	Savings visualization
-Expedite Decision Counts	Number of expedited vs normal shipments
-Predicted Delay Probability	Future risk assessment
-🧠 Key Outputs
+Python · pandas · NumPy · scikit-learn (`RandomForestClassifier`,
+`RandomForestRegressor`) · matplotlib · seaborn
 
-Delay Classifier ROC-AUC: ~0.82
+## Author
 
-Delay Regressor MAE: ~1.4 days
-
-Expected Cost Savings: ₹200K–₹500K (depending on data)
-
-Expedite Recommendations: Clear, data-driven decision support
-
-🧰 Tech Stack
-
-Language: Python 3.10
-
-Libraries: pandas, numpy, scikit-learn, matplotlib, seaborn, lightgbm
-
-Platform: Google Colab
-
-Visualization Tools: Matplotlib, Seaborn, Power BI
-
-🚀 How to Run
-
-Open Google Colab
-.
-
-Upload the provided notebook and dataset (yarn_supplychain_surat.csv).
-
-Run all cells in order.
-
-Observe printed outputs and visual graphs directly.
+Raghav Malani

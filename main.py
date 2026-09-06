@@ -1,10 +1,22 @@
 # 🧶 YARN SUPPLY CHAIN DELAY PREDICTION + COST ANALYSIS
 
 # NOTE: Install dependencies from your terminal, e.g.:
-# pip install pandas numpy scikit-learn matplotlib seaborn lightgbm
+# pip install pandas numpy scikit-learn matplotlib seaborn
+# (lightgbm is not used by this script despite older docs mentioning it —
+# only sklearn's RandomForestClassifier/Regressor are used below.)
 
 import argparse
 import sys
+
+# The cost-optimization output below prints ₹ amounts. On Windows, stdout
+# defaults to the system codepage (e.g. cp1252) rather than UTF-8, which
+# raises UnicodeEncodeError on the ₹ sign the moment it's not redirected
+# through a UTF-8-aware terminal. Force UTF-8 for stdout/stderr up front so
+# `python main.py data.csv` works the same in any terminal.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -39,10 +51,19 @@ df["planned_transit_days"] = (df["scheduled_arrival"] - df["scheduled_departure"
 df["weekday_dep"] = df["scheduled_departure"].dt.weekday
 df["month_dep"] = df["scheduled_departure"].dt.month
 
-# rolling mean per carrier (ensure ordering by date within carrier)
+# Rolling delay rate per carrier, over that carrier's most recent 30
+# shipment records (not calendar days — there's no date resampling here,
+# so "30" means "the last 30 rows for this carrier" once sorted above).
+#
+# NOTE: this previously used window=60 (mismatched with both the column
+# name and this comment) and rolled WITHOUT shift(1), so each row's
+# feature included that same row's own delay_flag — the model was
+# partly reading its own label (target leakage). shift(1) excludes the
+# current row so the feature only reflects delay history known *before*
+# this shipment's outcome, and the window now matches its name.
 df["carrier_delay_30"] = (
     df.groupby("carrier")["delay_flag"]
-      .transform(lambda x: x.rolling(window=60, min_periods=1).mean())
+      .transform(lambda x: x.shift(1).rolling(window=30, min_periods=1).mean())
       .fillna(0)
 )
 

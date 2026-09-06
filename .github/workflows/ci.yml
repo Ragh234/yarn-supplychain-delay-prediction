@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    env:
+      # main.py calls plt.show() throughout; the Agg backend makes that a
+      # no-op so the full pipeline runs headless with zero code changes.
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the full training + optimization pipeline
+        run: python main.py yarn_supplychain_surat.csv
+
+    # This proves the model actually trains end-to-end on every push,
+    # rather than just checking the script compiles. There's no separate
+    # unit test suite — the "test" here is the pipeline producing a
+    # ROC-AUC/MAE and a cost-savings figure without raising.
