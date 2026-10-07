@@ -85,6 +85,17 @@ Expected Cost Savings: ₹200K–₹500K (depending on data)
 
 Expedite Recommendations: Clear, data-driven decision support
 
+📊 Power BI Dashboard
+
+A Power BI report built on the same dataset (`powerbi/Supply_Chain_Delay_Analysis.pbix`) turns the expedite rule into an interactive business view.
+
+![Power BI dashboard](powerbi/dashboard.png)
+
+- Data prepared in Power Query (types, duplicate check, location mapping) and modelled with DAX measures.
+- Expedite rule: expedite a shipment only when its surcharge is lower than the expected stockout loss (carrier late rate × quantity × stockout cost per tonne).
+- On the 1,000 synthetic shipments, 74.5% arrive late; the rule cuts expected cost by about ₹48.4 lakh (64%) versus never expediting, and is 8.5% cheaper than expediting everything.
+- Carrier late rates sit within a 5.4-point band (72.0% to 77.4%), so carrier choice alone does not explain delays. All figures are from synthetic data.
+
 🧰 Tech Stack
 
 Language: Python 3.10
