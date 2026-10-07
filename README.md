@@ -1,118 +1,137 @@
-🧶 Yarn Supply Chain Delay Prediction & Cost Optimization
-📘 Overview
+# 🧶 Yarn Supply Chain: Shipment Delays and Expedite Decisions
 
-This project focuses on predicting shipment delays and minimizing overall logistics costs in the Yarn Manufacturing and Distribution Supply Chain.
-The yarn company, based in Surat, processes raw yarn sourced from Indian states like Gujarat, Chennai, Punjab, Rajasthan, and UP, and distributes finished yarn to Mumbai, Madhya Pradesh, Assam, Gujarat, Kerala, West Bengal, Karnataka, Jaipur, and Uttarakhand.
+A Surat-based yarn company ships raw yarn in from Gujarat, Chennai, Punjab, Rajasthan and Uttar Pradesh, and sends finished yarn out to Mumbai, Jaipur, Madhya Pradesh, Assam, Kerala, West Bengal, Karnataka, Uttarakhand and Gujarat. Most shipments arrive late, and a late shipment can stop production or delay a customer order.
 
-🎯 Objectives
+**Business question:** which shipments are worth paying an expedite surcharge for, and how much does that save compared with never expediting or expediting everything?
 
-Predict the probability and duration of shipment delays using historical data.
+The same dataset is analysed three ways:
 
-Estimate cost impacts due to delays, stockouts, and expedited shipping.
+| Part | Tool | What it does |
+|---|---|---|
+| [Excel analysis](#1-excel-analysis) | Microsoft Excel | Data cleaning and validation, delay analysis, the expedite cost model with what-if inputs, and a dashboard |
+| [Power BI dashboard](#2-power-bi-dashboard) | Power BI, Power Query, DAX | Interactive version of the analysis and the expedite rule |
+| [Python model](#3-python-model) | pandas, scikit-learn | Tests whether delays can be predicted per shipment with machine learning |
 
-Recommend optimal expedite decisions to minimize total logistics cost.
+> **Data note:** `yarn_supplychain_surat.csv` is a synthetic dataset of 1,000 shipments booked January to October 2025. Treat the rupee totals as illustrative; the method is the point.
 
-Visualize insights via graphs and Power BI dashboards.
+---
 
-🧩 Project Workflow
+## Key findings
 
-Data Preparation
+The Excel workbook and the Power BI dashboard calculate these independently and agree.
 
-Synthetic dataset (yarn_supplychain_surat.csv) with ~1000 records.
+| Finding | Number |
+|---|---|
+| Shipments that arrived late | **74.5%** (745 of 1,000) |
+| Average delay of a late shipment | **3.4 days** |
+| Gap in late rate between the best and worst carrier | **5.4 percentage points** (VRL Cargo 72.0% to BlueDart 77.4%) |
+| Late rate by route | **56% to 85%**, but outbound routes have only 37 to 54 shipments each |
+| Expected stockout cost if nothing is expedited | **₹75.7 lakh** |
+| Cost if every shipment is expedited | **₹29.9 lakh** |
+| Cost under the smart expedite rule | **₹27.4 lakh** (expedites 822 of 1,000 shipments) |
+| Saving from the smart rule | **₹48.4 lakh (64%)** vs never expediting, **8.5%** vs expediting everything |
 
-Includes features such as:
+**What this means:** every carrier is late about three times in four, so switching carriers is not the fix. The lever is choosing which shipments to expedite.
 
-booking_date, scheduled_departure, actual_arrival
+## The expedite rule
 
-carrier, shipment_type, weight, quantity_tonnes
+```
+Chance of delay         = the carrier's historical late rate
+Expected stockout cost  = chance of delay × quantity (tonnes) × stockout cost per tonne
+Decision                = Expedite if expedite surcharge < expected stockout cost, else Standard
+```
 
-shipping_cost, expedite_surcharge, stockout_cost_per_tonne
+Assumptions:
 
-delay_flag, delay_days
+1. Base shipping cost is paid either way, so only the expedite surcharge counts as the extra cost of expediting.
+2. An expedited shipment is assumed to arrive on time. The Excel model lets you lower this "expedite effectiveness" and see the effect.
+3. The late rates come from the same data they are applied to (in-sample), so the result is illustrative.
 
-Data simulated to represent Surat-based factory operations.
+---
 
-Feature Engineering
+## 1. Excel analysis
 
-Calculated lead time, planned transit days, month, and weekday.
+File: [`excel/Shipment_Delay_Analysis.xlsx`](excel/Shipment_Delay_Analysis.xlsx). Every number is a live formula, so changing an input recalculates the whole workbook.
 
-Added rolling carrier delay rate (30-day window).
+![Excel dashboard](excel/dashboard.png)
 
-Encoded categorical fields like temperature sensitivity.
+| Sheet | What it does |
+|---|---|
+| `Raw` | The CSV exactly as received, with dates kept as text |
+| `Location_Map` | Maps each place to a state and region (the source data mixes city and state names) |
+| `Clean` | Converts text dates with `DATE`/`TIME`, maps locations with `INDEX`/`MATCH`, recomputes delay, buckets delay with `IFS`, and adds route, month, lead time and transit time |
+| `Data_Quality` | Formula checks with PASS/CHECK status |
+| `Analysis` | Late %, average delay, cost per tonne and returns by carrier, month, material, shipment type, temperature sensitivity, region, route and delay category, using `COUNTIFS`, `AVERAGEIFS` and `SUMIFS`. Routes are colour-scaled. |
+| `Model` | Expedite model: input cells, Never / Always / Smart comparison, sensitivity grids, and a single-shipment calculator |
+| `Model_Detail` | The expedite decision for each of the 1,000 shipments |
+| `Dashboard` | KPI cards, four charts, a route table and formula-driven takeaways |
 
-Modeling
+**Data quality results:** 1,000 rows loaded; no blank cells, duplicate shipment IDs or unmapped locations; recorded delay matches arrival minus scheduled arrival on every row; the late flag agrees with delay days on every row; no shipment arrives before it departs or departs before it is booked. 244 shipments arrived early (negative delay), which is valid, not an error.
 
-RandomForestClassifier → predicts probability of shipment delay.
+**What-if inputs (Model sheet):**
+- **Stockout cost multiplier** (default 1.0) scales every stockout cost up or down.
+- **Expedite effectiveness** (default 100%) is the share of delay risk an expedite removes.
+- **Sensitivity grids** show the saving and the share of shipments expedited for multipliers from 0.25 to 2 and effectiveness of 50%, 75% and 100% (built with `SUMPRODUCT`).
+- **Single-shipment calculator:** pick a shipment ID from the dropdown to see its carrier, risk, net benefit of expediting, and the break-even stockout cost per tonne.
 
-RandomForestRegressor → predicts expected delay days.
+**Excel functions used:** `INDEX`/`MATCH`, `IFERROR`, `IFS`, `COUNTIFS`, `AVERAGEIFS`, `SUMIFS`, `SUMPRODUCT`, `COUNTIF`, `DATE`, `TIME`, `LEFT`/`MID`, `TEXT`, plus conditional formatting, data validation and charts.
 
-Model evaluation metrics:
+## 2. Power BI dashboard
 
-ROC-AUC for classification
-
-MAE (Mean Absolute Error) for regression
-
-Optimization
-
-Calculated baseline vs optimized costs using predicted delays:
-
-Expected Stockout Cost = Delay Probability × Quantity × Stockout Cost
-Expedite Cost = Shipping Cost + Expedite Surcharge
-Decision: Expedite if Expedite Cost < Expected Stockout Cost
-
-
-Computed total baseline cost, optimized cost, and savings.
-
-📊 Visualizations (Matplotlib + Seaborn)
-
-The notebook produces multiple insightful graphs:
-
-Visualization	Purpose
-ROC Curve	Classifier performance (AUC score)
-Delay Distribution	Frequency of shipment delays
-Average Delay by Carrier	Carrier efficiency comparison
-Shipping Cost vs Delay Days	Correlation insight
-Cost Comparison (Baseline vs Optimized)	Savings visualization
-Expedite Decision Counts	Number of expedited vs normal shipments
-Predicted Delay Probability	Future risk assessment
-🧠 Key Outputs
-
-Delay Classifier ROC-AUC: ~0.82
-
-Delay Regressor MAE: ~1.4 days
-
-Expected Cost Savings: ₹200K–₹500K (depending on data)
-
-Expedite Recommendations: Clear, data-driven decision support
-
-📊 Power BI Dashboard
-
-A Power BI report built on the same dataset (`powerbi/Supply_Chain_Delay_Analysis.pbix`) turns the expedite rule into an interactive business view.
+File: [`powerbi/Supply_Chain_Delay_Analysis.pbix`](powerbi/Supply_Chain_Delay_Analysis.pbix)
 
 ![Power BI dashboard](powerbi/dashboard.png)
 
-- Data prepared in Power Query (types, duplicate check, location mapping) and modelled with DAX measures.
-- Expedite rule: expedite a shipment only when its surcharge is lower than the expected stockout loss (carrier late rate × quantity × stockout cost per tonne).
-- On the 1,000 synthetic shipments, 74.5% arrive late; the rule cuts expected cost by about ₹48.4 lakh (64%) versus never expediting, and is 8.5% cheaper than expediting everything.
-- Carrier late rates sit within a 5.4-point band (72.0% to 77.4%), so carrier choice alone does not explain delays. All figures are from synthetic data.
+- **Power Query:** loads the CSV, sets column types, checks for duplicates, and joins a location-to-region mapping.
+- **DAX:** calculated columns for each carrier's late rate, the expected stockout cost and the expedite decision. Measures for the Never, Always and Smart policy costs, the saving, and the carrier late-rate gap.
+- **Report:** KPI cards, late % by carrier, month and route, shipments by delay category, the policy cost comparison, slicers for material type and shipment type, and written takeaways.
 
-🧰 Tech Stack
+## 3. Python model
 
-Language: Python 3.10
+File: [`main.py`](main.py). Random forest models try to predict, for each shipment, whether it will be late and by how many days. The features are lead time, planned transit time, departure weekday and month, the carrier's recent late rate, quantity, costs and temperature sensitivity.
 
-Libraries: pandas, numpy, scikit-learn, matplotlib, seaborn, lightgbm
+Results from the current script (last 20% of rows held out for testing):
 
-Platform: Google Colab
+| Model | Metric | Result |
+|---|---|---|
+| Delay classifier | ROC-AUC | **0.56** |
+| Delay-days regressor | Mean absolute error | **2.25 days** |
 
-Visualization Tools: Matplotlib, Seaborn, Power BI
+An ROC-AUC of 0.56 is barely better than a coin flip (0.5). With the features available, individual delays are close to unpredictable in this dataset. That is why the Excel and Power BI models use each carrier's historical late rate as the chance of delay, rather than a per-shipment prediction.
 
-🚀 How to Run
+The script also applies the expedite rule to the last 300 shipments using the predicted probabilities. Expected cost falls from ₹37.6 lakh to ₹24.0 lakh, with 224 of 300 shipments expedited.
 
-Open Google Colab
-.
+Charts from an earlier run of the script (the ROC curve there shows 0.635; the current script gives 0.56):
 
-Upload the provided notebook and dataset (yarn_supplychain_surat.csv).
+| | |
+|---|---|
+| ![ROC curve](Screenshot%202025-10-23%20010303.png) ROC curve | ![Delay distribution](Screenshot%202025-10-23%20010354.png) Delay distribution |
+| ![Average delay by carrier](Screenshot%202025-10-23%20010406.png) Average delay by carrier | ![Shipping cost vs delay](Screenshot%202025-10-23%20010415.png) Shipping cost vs delay |
+| ![Cost comparison](Screenshot%202025-10-23%20010428.png) Baseline vs optimised cost | ![Expedite decisions](Screenshot%202025-10-23%20010437.png) Expedite decisions |
+| ![Predicted delay probability](Screenshot%202025-10-23%20010443.png) Predicted delay probability | |
 
-Run all cells in order.
+---
 
-Observe printed outputs and visual graphs directly.
+## Limitations
+
+- The data is synthetic, so the rupee figures are illustrative.
+- Late rates are measured on the same shipments they are applied to. A real rollout would measure them on past shipments and test on future ones.
+- The model assumes an expedited shipment arrives on time unless expedite effectiveness is lowered.
+- Outbound routes have few shipments each, so the differences between routes need more data before anyone acts on them.
+
+## How to use
+
+**Excel:** open `excel/Shipment_Delay_Analysis.xlsx` (Excel 2019 or later) and click **Enable Editing** so formulas recalculate. Change the yellow input cells on the `Model` sheet, or pick a shipment ID in the calculator.
+
+**Power BI:** open `powerbi/Supply_Chain_Delay_Analysis.pbix` in Power BI Desktop. Use the slicers at the top right to filter by material type or shipment type.
+
+**Python:**
+
+```bash
+pip install pandas numpy scikit-learn matplotlib seaborn
+python main.py yarn_supplychain_surat.csv
+```
+
+## Tech stack
+
+Microsoft Excel · Power BI (Power Query, DAX) · Python (pandas, NumPy, scikit-learn, Matplotlib, seaborn)
